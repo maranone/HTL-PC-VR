@@ -26,6 +26,7 @@
 #include "core/vr/openxr_host.h"
 #endif
 #include "sdl_window.h"
+#include "video_core/renderer_vulkan/host_passes/pp_pass.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 
 #ifdef __APPLE__
@@ -204,7 +205,7 @@ std::vector<const char*> GetInstanceExtensions(Frontend::WindowSystemType window
         extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
     }
 
-    if (EmulatorSettings.IsHdrAllowed()) {
+    if (EmulatorSettings.IsHdrAllowed() || HostPasses::HdrExpand::Get().Enabled()) {
         extensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
     }
 

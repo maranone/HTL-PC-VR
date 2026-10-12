@@ -4,6 +4,8 @@
 #pragma once
 
 #include <array>
+#include <cstdio>
+#include <cstdlib>
 #include <optional>
 #include <span>
 
@@ -18,6 +20,34 @@ class Frame;
 
 namespace Vulkan::HostPasses {
 
+/// SHADPS4_HDR_EXPAND=<peak nits>[,<paper white nits>]: a title that only draws SDR is shown on an
+/// HDR10 display all the same, its white at paper white (200 unless told) and its brightest
+/// light stretched up to the peak. Zeros when unset or out of range.
+struct HdrExpand {
+    float peak_nits = 0.0f;
+    float paper_nits = 0.0f;
+    static const HdrExpand& Get() {
+        static const HdrExpand value = [] {
+            HdrExpand result{};
+            const char* text = std::getenv("SHADPS4_HDR_EXPAND");
+            if (text == nullptr) {
+                return result;
+            }
+            float peak = 0.0f, paper = 200.0f;
+            if (std::sscanf(text, "%f,%f", &peak, &paper) >= 1 && paper >= 80.0f &&
+                paper <= 500.0f && peak >= paper && peak <= 10000.0f) {
+                result.peak_nits = peak;
+                result.paper_nits = paper;
+            }
+            return result;
+        }();
+        return value;
+    }
+    bool Enabled() const {
+        return paper_nits > 0.0f;
+    }
+};
+
 class PostProcessingPass {
 public:
     struct Settings {
@@ -28,9 +58,16 @@ public:
         /// For an output image of an sRGB format, which does the encoding for display itself.
         u32 linear_out = 0;
         std::array<float, 4> source_uv{1.0f, 1.0f, 0.0f, 0.0f};
+        /// Around mid grey, as displayed: above 1 darks darker and lights lighter.
+        float contrast = 1.0f;
+        /// 0 grey, 1 as drawn, above 1 more colourful.
+        float saturation = 1.0f;
+        /// Above 0: an SDR picture shown on an HDR10 target (SHADPS4_HDR_EXPAND).
+        float hdr_paper_nits = 0.0f;
+        float hdr_peak_nits = 0.0f;
     };
 
-    static_assert(sizeof(Settings) == 32); // Matches the fragment shader push constants.
+    static_assert(sizeof(Settings) == 48); // Matches the fragment shader push constants.
 
     void Create(const Instance& instance, MasterSemaphore* master_semaphore,
                 vk::Format surface_format);

@@ -567,9 +567,9 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
             .instance = instance.GetInstance(),
             .physical_device = instance.GetPhysicalDevice(),
             .device = instance.GetDevice(),
-            .queue = instance.GetGraphicsQueue(),
+            .queue = instance.GetXrQueue(),
             .queue_family = instance.GetGraphicsQueueFamilyIndex(),
-            .queue_index = 0,
+            .queue_index = instance.GetXrQueueIndex(),
         });
     }
 #endif
@@ -1218,6 +1218,18 @@ HmdFrames Presenter::PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textu
         if (headset_gamma != 0.0f) {
             local_settings.gamma = headset_gamma;
         }
+        // SHADPS4_VR_HEADSET_CONTRAST / _SATURATION=<0.5..2.0>: the headset's picture only, 1
+        // unchanged. Some contrast (1.1) gives dark scenes on an LCD headset back the depth that
+        // darkening alone (gamma) does not.
+        static const auto headset_grade = [](const char* name) {
+            const char* value = std::getenv(name);
+            const float amount = value != nullptr ? static_cast<float>(std::atof(value)) : 1.0f;
+            return amount >= 0.5f && amount <= 2.0f ? amount : 1.0f;
+        };
+        static const float headset_contrast = headset_grade("SHADPS4_VR_HEADSET_CONTRAST");
+        static const float headset_saturation = headset_grade("SHADPS4_VR_HEADSET_SATURATION");
+        local_settings.contrast = headset_contrast;
+        local_settings.saturation = headset_saturation;
         hmd_pp_pass.Render(cmdbuf, regions_for(*local), *local, local_settings);
         DebugState.output_resolution = {local->width, local->height};
     }

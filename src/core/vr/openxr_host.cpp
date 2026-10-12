@@ -288,6 +288,13 @@ std::string ActiveAudioDeviceEnding(std::string_view ending, EDataFlow flow) {
 } // namespace
 
 struct OpenXrHost::Impl {
+    /// What guards the queue the runtime was given: the emulator's submissions' lock while the
+    /// two share one, a lock of the host's own once the runtime has a queue to itself.
+    std::mutex& QueueMutex() {
+        static std::mutex own;
+        return graphics.queue_index != 0 ? own : Vulkan::Scheduler::submit_mutex;
+    }
+
     struct Slot {
         enum class State { Free, Drawing, Ready, Reading };
 
@@ -834,7 +841,7 @@ struct OpenXrHost::Impl {
         {
             // Runtimes that draw with something else underneath set up what they share with
             // this device now, on its queue.
-            std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+            std::scoped_lock lock{QueueMutex()};
             result = xrCreateSession(instance, &session_info, &session);
         }
         if (XR_FAILED(result)) {
@@ -1551,7 +1558,14 @@ struct OpenXrHost::Impl {
                                     location.pose.position.z - head_pose.position.z});
         };
         XrSpaceLocation left{XR_TYPE_SPACE_LOCATION};
-        if (locate(Left, left)) {
+        // With the torch left to the head (SHADPS4_HTL_TORCH_HAND=0), the hand that holds it is
+        // the game's own as well: reaching for the controller, it would hold a torch that shines
+        // somewhere else.
+        static const bool torch_to_head = [] {
+            const char* value = std::getenv("SHADPS4_HTL_TORCH_HAND");
+            return value != nullptr && *value == '0';
+        }();
+        if (!torch_to_head && locate(Left, left)) {
             const XrVector3f at = from_head(left);
             Core::HtlHands::SetLeftHand({at.x, at.y, at.z});
         } else {
@@ -1782,7 +1796,7 @@ struct OpenXrHost::Impl {
 
     void DestroySwapchain() {
         if (swapchain != XR_NULL_HANDLE) {
-            std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+            std::scoped_lock lock{QueueMutex()};
             xrDestroySwapchain(swapchain);
             swapchain = XR_NULL_HANDLE;
         }
@@ -1855,7 +1869,7 @@ struct OpenXrHost::Impl {
             view_space = XR_NULL_HANDLE;
         }
         if (session != XR_NULL_HANDLE) {
-            std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+            std::scoped_lock lock{QueueMutex()};
             xrDestroySession(session);
             session = XR_NULL_HANDLE;
         }
@@ -2144,7 +2158,7 @@ struct OpenXrHost::Impl {
 
             XrResult begun;
             {
-                std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+                std::scoped_lock lock{QueueMutex()};
                 begun = xrBeginFrame(session, nullptr);
             }
             if (XR_FAILED(begun)) {
@@ -2206,7 +2220,7 @@ struct OpenXrHost::Impl {
             const auto ending = Clock::now();
             XrResult ended;
             {
-                std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+                std::scoped_lock lock{QueueMutex()};
                 ended = xrEndFrame(session, &end);
             }
             const double took = std::chrono::duration<double>(Clock::now() - ending).count();
@@ -2557,7 +2571,7 @@ struct OpenXrHost::Impl {
         {
             // Creating the images, and listing them, has some runtimes prepare them on the
             // queue.
-            std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+            std::scoped_lock lock{QueueMutex()};
             result = xrCreateSwapchain(session, &info, &swapchain);
             if (XR_SUCCEEDED(result)) {
                 uint32_t image_count = 0;
@@ -2611,7 +2625,7 @@ struct OpenXrHost::Impl {
         uint32_t image_index = 0;
         XrResult result;
         {
-            std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+            std::scoped_lock lock{QueueMutex()};
             XrSwapchainImageAcquireInfo acquire{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
             result = xrAcquireSwapchainImage(swapchain, &acquire, &image_index);
         }
@@ -2741,7 +2755,7 @@ struct OpenXrHost::Impl {
 
         bool submitted;
         {
-            std::scoped_lock lock{Vulkan::Scheduler::submit_mutex};
+            std::scoped_lock lock{QueueMutex()};
             const vk::SubmitInfo submit_info = {
                 .commandBufferCount = 1,
                 .pCommandBuffers = &cmdbuf,

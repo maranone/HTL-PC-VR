@@ -435,10 +435,20 @@ bool Instance::CreateDevice() {
         return false;
     }
 
-    static constexpr std::array queue_priorities = {1.0f};
+    // A headset's runtime gets a queue of its own where the family has two: handing it a
+    // picture can take most of a refresh (Virtual Desktop: 10 to 13 ms of 13.9), and on a shared
+    // queue the emulator cannot submit anything meanwhile (the queue's lock is held), so the
+    // title missed every other refresh. SHADPS4_XR_OWN_QUEUE=0 shares the one queue again.
+    static const bool xr_own_queue = [] {
+        const char* value = std::getenv("SHADPS4_XR_OWN_QUEUE");
+        return value == nullptr || value[0] != '0';
+    }();
+    static constexpr std::array queue_priorities = {1.0f, 1.0f};
+    const u32 queue_count =
+        xr_own_queue && family_properties[queue_family_index].queueCount >= 2 ? 2u : 1u;
     const vk::DeviceQueueCreateInfo queue_info = {
         .queueFamilyIndex = queue_family_index,
-        .queueCount = static_cast<u32>(queue_priorities.size()),
+        .queueCount = queue_count,
         .pQueuePriorities = queue_priorities.data(),
     };
 
@@ -703,6 +713,9 @@ bool Instance::CreateDevice() {
 
 
     graphics_queue = device->getQueue(queue_family_index, 0);
+    if (queue_count >= 2) {
+        xr_queue = device->getQueue(queue_family_index, 1);
+    }
     present_queue = device->getQueue(queue_family_index, 0);
 
     if (calibrated_timestamps) {

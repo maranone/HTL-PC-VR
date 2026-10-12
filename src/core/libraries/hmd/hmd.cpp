@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
+#include <cstdio>
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "core/libraries/error_codes.h"
@@ -43,7 +45,20 @@ static void FillDeviceInformation(OrbisHmdDeviceInformation* info) {
         info->user_id = UserManagement.GetDefaultUser().user_id;
     }
     info->status = OrbisHmdDeviceStatus::ORBIS_HMD_DEVICE_STATUS_READY;
-    info->device_info.panel_resolution = {PanelWidth, PanelHeight};
+    // SHADPS4_HMD_PANEL=<width>x<height>: another panel. Titles that size their eye pictures
+    // from it then draw them in that shape (flat play: wide eyes for a wide view).
+    static const std::array<u32, 2> panel = [] {
+        std::array<u32, 2> size{PanelWidth, PanelHeight};
+        if (const char* value = std::getenv("SHADPS4_HMD_PANEL"); value != nullptr) {
+            u32 width{}, height{};
+            if (std::sscanf(value, "%ux%u", &width, &height) == 2 && width >= 640 &&
+                width <= 7680 && height >= 360 && height <= 4320) {
+                size = {width, height};
+            }
+        }
+        return size;
+    }();
+    info->device_info.panel_resolution = {panel[0], panel[1]};
     info->device_info.flip_to_display_latency = {FlipToDisplayLatency90Hz,
                                                  FlipToDisplayLatency120Hz};
     // Whether the headset is on the head: always, unless a host knows better.

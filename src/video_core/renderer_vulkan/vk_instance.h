@@ -67,6 +67,15 @@ public:
         return queue_family_index;
     }
 
+    /// The queue a headset's runtime is given (see CreateDevice): a second one of the graphics
+    /// family where there is one, otherwise the emulator's own.
+    vk::Queue GetXrQueue() const {
+        return xr_queue ? xr_queue : graphics_queue;
+    }
+    u32 GetXrQueueIndex() const {
+        return xr_queue ? 1u : 0u;
+    }
+
     vk::Queue GetGraphicsQueue() const {
         return graphics_queue;
     }
@@ -531,6 +540,7 @@ private:
     VmaAllocator allocator{};
     vk::Queue present_queue;
     vk::Queue graphics_queue;
+    vk::Queue xr_queue;
     std::vector<vk::PhysicalDevice> physical_devices;
     std::vector<std::string> available_extensions;
     std::unordered_map<vk::Format, vk::FormatProperties3> format_properties;

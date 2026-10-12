@@ -935,6 +935,31 @@ void OnFrameSubmitted() {
                          variable, before, render_before, requested);
             }
         }
+        // Without a headset the game draws one view through the engine's own r.ScreenPercentage
+        // (its TAutoConsoleVariable<float> at 0x43815e0; +0x10 is its game/render data), which the
+        // headset path above never reaches. SHADPS4_HTL_FLAT_PERCENT=<100..200> holds it there.
+        static const float flat_requested = [] {
+            const char* value = std::getenv("SHADPS4_HTL_FLAT_PERCENT");
+            return value ? static_cast<float>(std::atof(value)) : 0.0f;
+        }();
+        if (flat_requested >= 100.0f && flat_requested <= 200.0f &&
+            !Core::Vr::Runtime::Instance().IsHeadsetConnected() &&
+            Read<u64>(htl_base + 0x43815e0) == htl_base + 0x40d8688) {
+            const VAddr data = Read<u64>(htl_base + 0x43815e0 + 0x10);
+            if (data && Core::Memory::Instance()->IsValidMapping(data, 8)) {
+                const float game = Read<float>(data);
+                const float render = Read<float>(data + 4);
+                if (game >= 1.0f && game <= 400.0f && render >= 1.0f && render <= 400.0f) {
+                    Write<float>(data, flat_requested);
+                    Write<float>(data + 4, flat_requested);
+                }
+                static u32 flat_reports = 0;
+                if (flat_reports++ < 4 || flat_reports % 600 == 0) {
+                    LOG_INFO(Core, "HTL flat r.ScreenPercentage {:#x}: game {} render {} -> {}",
+                             data, game, render, flat_requested);
+                }
+            }
+        }
     }
 
     const Build* const build = known_build.load(std::memory_order_acquire);
@@ -1058,7 +1083,8 @@ void Prepare() {
     }
     if (Common::ElfInfo::Instance().GameSerial() == "CUSA05344") {
         const char* value = std::getenv("SHADPS4_HTL_SCREEN_PERCENT");
-        const double percent = value ? std::atof(value) : 0.0;
+        const char* flat = std::getenv("SHADPS4_HTL_FLAT_PERCENT");
+        const double percent = std::max(value ? std::atof(value) : 0.0, flat ? std::atof(flat) : 0.0);
         if (percent > 100.0 && percent <= 200.0 &&
             EmulatorSettings.GetExtraDmemInMBytes() < 2048) {
             EmulatorSettings.SetExtraDmemInMBytes(2048);
@@ -1111,6 +1137,7 @@ void OnGameLoaded(VAddr base, u64 size) {
     if (Common::ElfInfo::Instance().GameSerial() == "CUSA05344" &&
         (std::getenv("SHADPS4_HTL_RESOLUTION_TRACE") ||
          std::getenv("SHADPS4_HTL_SCREEN_PERCENT") ||
+         std::getenv("SHADPS4_HTL_FLAT_PERCENT") ||
          std::getenv("SHADPS4_HTL_TARGET_FPS") ||
          std::getenv("SHADPS4_HTL_AUTO_RECENTER") ||
          Common::Diagnostics::Session::Get().LabEnabled())) {

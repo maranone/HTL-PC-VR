@@ -12,6 +12,7 @@
 #endif
 #include "imgui/renderer/imgui_core.h"
 #include "sdl_window.h"
+#include "video_core/renderer_vulkan/host_passes/pp_pass.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
 
@@ -122,6 +123,7 @@ void Swapchain::SetHDR(bool hdr) {
     }
 
     needs_hdr = hdr;
+    LOG_INFO(Render_Vulkan, "Display output switched to {}", hdr ? "HDR10 (Rec.2020 PQ)" : "SDR");
     Recreate(width, height);
     ImGui::Core::OnSurfaceFormatChange(needs_hdr ? SURFACE_FORMAT_HDR.format
                                                  : surface_format.format);
@@ -226,7 +228,7 @@ void Swapchain::FindPresentFormat() {
             return format == SURFACE_FORMAT_HDR;
         }) != formats.end();
     // Also make sure that user allowed us to use HDR
-    supports_hdr &= EmulatorSettings.IsHdrAllowed();
+    supports_hdr &= EmulatorSettings.IsHdrAllowed() || HostPasses::HdrExpand::Get().Enabled();
 
     // If there is a single undefined surface format, the device doesn't care, so we'll just use
     // RGBA sRGB.

@@ -34,8 +34,13 @@ inline float DesktopViewAspect(DesktopView view, const Fov& fov, float eye_aspec
     if (view == DesktopView::Stereo) {
         return eye_aspect * 2.0f;
     }
-    if (view == DesktopView::Spectator || !ValidSpectatorFov(fov)) {
+    if (!ValidSpectatorFov(fov)) {
         return eye_aspect;
+    }
+    if (view == DesktopView::Spectator) {
+        // One eye as it was drawn: its view's own proportions, whatever the picture's size (a
+        // title told of a wide headset draws a wide view into the same picture).
+        return (fov.tan_out + fov.tan_in) / (fov.tan_top + fov.tan_bottom);
     }
     return eye_aspect * 2.0f * std::max(fov.tan_out, fov.tan_in) / (fov.tan_out + fov.tan_in);
 }

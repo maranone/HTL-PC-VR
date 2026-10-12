@@ -1,8 +1,9 @@
-# HTL-VR
+# HTL-PC-VR
 
 An **unofficial** PC VR launcher and emulator build for *Here They Lie* (PS4, CUSA05344, update
-1.03). It plays **your own copy** of the game in a PC VR headset with tracked controllers. It is
-based on a fork of the [shadPS4](https://github.com/shadps4-emu/shadPS4) PlayStation 4 emulator.
+1.03). It plays **your own copy** of the game in a PC VR headset with tracked controllers, or on
+your monitor in the game's own 2D mode at up to 4K and in HDR. It is based on a fork of the
+[shadPS4](https://github.com/shadps4-emu/shadPS4) PlayStation 4 emulator.
 
 > **Not affiliated with, endorsed by, or connected to Sony Interactive Entertainment or
 > Tangentlemen.** *Here They Lie* is a trademark of its respective owners. This repository and
@@ -25,12 +26,20 @@ based on a fork of the [shadPS4](https://github.com/shadps4-emu/shadPS4) PlaySta
 - Optional 150% and 200% render resolution, and a darker headset picture.
 - Skips the intro movies and startup notes for faster loading.
 - Installs the game from your own fake-signed (unencrypted) PS4 packages.
+- **No headset needed:** `Play Here They Lie 2D.bat` starts the game's own single-view 2D mode on
+  the monitor, fullscreen.
+  - The scene is drawn at 3840x2160, 200% of the game's 1920x1080 picture.
+  - The mouse turns the camera directly, as in a PC game.
+  - WASD walks, and holding Ctrl crouches.
+- **HDR:** `Play Here They Lie 2D HDR.bat` shows the same picture as HDR10 on an HDR monitor. Turn
+  on HDR in Windows first.
 
 Among the emulator fixes in this build:
 - real occlusion queries, which took the game from 20 to 72 fps;
 - fixes for corrupted mipmaps and the random colour tint;
 - crash fixes in pak file reading;
-- frame pacing for 72 Hz.
+- frame pacing for 72 Hz;
+- the PS4 font warning is now only written to the log.
 
 ## Using a release
 
@@ -39,6 +48,10 @@ Among the emulator fixes in this build:
 2. Drop the base game `.pkg` and its 1.03 update `.pkg` onto `Install game from pkg.bat`. If the
    game is already installed somewhere, start any `Play ... .bat` and pick that folder instead.
 3. Start your OpenXR runtime, put the headset on, and double-click `Play Here They Lie VR.bat`.
+   Without a headset, double-click `Play Here They Lie 2D.bat` (or the HDR one) instead.
+
+The first runs stutter while shaders are translated. They are kept on your PC, so it gets
+smoother as you play.
 
 The release's own `README.txt` covers controls, settings and troubleshooting.
 

@@ -780,6 +780,8 @@ set(VR_LIBS  src/core/libraries/hmd/hmd.cpp
              src/core/vr/htl_hands.h
              src/core/vr/htl_options.cpp
              src/core/vr/htl_options.h
+             src/core/vr/htl_mouse_look.cpp
+             src/core/vr/htl_mouse_look.h
              src/core/vr/htl_unreal.h
              src/core/vr/vr_host_link.cpp
              src/core/vr/vr_host_link.h

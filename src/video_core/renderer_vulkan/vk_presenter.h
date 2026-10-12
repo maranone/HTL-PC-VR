@@ -95,8 +95,12 @@ public:
         if (!IsHDRSupported()) {
             return;
         }
-        swapchain.SetHDR(enable);
+        // An SDR title shown on HDR10 when asked to (SHADPS4_HDR_EXPAND).
+        const auto& expand = HostPasses::HdrExpand::Get();
+        swapchain.SetHDR(enable || expand.Enabled());
         pp_settings.hdr = enable ? 1 : 0;
+        pp_settings.hdr_paper_nits = enable ? 0.0f : expand.paper_nits;
+        pp_settings.hdr_peak_nits = enable ? 0.0f : expand.peak_nits;
     }
 
     VideoCore::Image& RegisterVideoOutSurface(

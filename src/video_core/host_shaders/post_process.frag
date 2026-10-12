@@ -18,7 +18,32 @@ layout (push_constant) uniform settings {
     // given linear light, or the picture would be encoded twice.
     bool linear_out;
     vec4 source_uv;
+    float contrast;
+    float saturation;
+    // Above 0, an SDR picture is shown on an HDR10 target: its white at hdr_paper_nits, and its
+    // brightest part stretched up to hdr_peak_nits.
+    float hdr_paper_nits;
+    float hdr_peak_nits;
 } pp;
+
+// SDR as displayed (sRGB curve) to HDR10 (Rec.2020 primaries, PQ curve).
+vec3 expand_hdr(vec3 shown_srgb) {
+    vec3 linear = mix(pow((shown_srgb + 0.055) / 1.055, vec3(2.4)), shown_srgb / 12.92,
+                      lessThanEqual(shown_srgb, vec3(0.04045)));
+    float luma = dot(linear, vec3(0.2126, 0.7152, 0.0722));
+    // Up to the knee as on an SDR display at paper white; past it the light grows smoothly
+    // (no kink) until white reaches the peak.
+    const float knee = 0.55;
+    float over = max(luma - knee, 0.0) / (1.0 - knee);
+    float nits = luma * pp.hdr_paper_nits +
+                 max(pp.hdr_peak_nits - pp.hdr_paper_nits, 0.0) * over * over;
+    vec3 rgb = linear * (luma > 1e-6 ? nits / luma : pp.hdr_paper_nits);
+    const mat3 to2020 = mat3(0.6274, 0.0691, 0.0164,
+                             0.3293, 0.9195, 0.0880,
+                             0.0433, 0.0114, 0.8956);
+    vec3 y = pow(clamp(to2020 * rgb / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
+    return pow((0.8359375 + 18.8515625 * y) / (1.0 + 18.6875 * y), vec3(78.84375));
+}
 
 const float cutoff = 0.0031308, a = 1.055, b = 0.055, d = 12.92;
 vec3 gamma(vec3 rgb) {
@@ -62,7 +87,16 @@ void main() {
         here = clamp(((above + below + left + right) * weight + here) / (1.0 + 4.0 * weight),
                      0.0, 1.0);
     }
-    if (pp.linear_out && !pp.hdr) {
+    if (!pp.hdr && (pp.contrast != 1.0 || pp.saturation != 1.0)) {
+        // Grading in display terms (as QuestRetroDepth does): colour around its brightness,
+        // then everything away from mid grey.
+        float luma = dot(here, vec3(0.299, 0.587, 0.114));
+        here = mix(vec3(luma), here, pp.saturation);
+        here = clamp((here - 0.5) * pp.contrast + 0.5, 0.0, 1.0);
+    }
+    if (pp.hdr_paper_nits > 0.0 && !pp.hdr) {
+        here = expand_hdr(here);
+    } else if (pp.linear_out && !pp.hdr) {
         // Back to linear light, by the curve the target encodes with.
         here = mix(pow((here + 0.055) / 1.055, vec3(2.4)), here / 12.92,
                    lessThanEqual(here, vec3(0.04045)));

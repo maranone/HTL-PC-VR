@@ -2256,6 +2256,13 @@ void AddBuiltinFallbackFaces(FontState& st, u32 font_set_type, u32 subfont_index
 void NotifyBuiltinFontFallbackOnce() {
     static std::once_flag once;
     std::call_once(once, [] {
+        // A note in the log only: the bundled fonts serve, and a 30 second box over the picture
+        // is in the way, more so in 2D play. SHADPS4_FONT_WARNING=1 shows it on screen again.
+        LOG_WARNING(Lib_Font, "PS4 system fonts not found; using the bundled fallback fonts");
+        const char* show = std::getenv("SHADPS4_FONT_WARNING");
+        if (show == nullptr || show[0] != '1') {
+            return;
+        }
         shadNotifications::QueueNotification("WARNING! PS4 system fonts not found.\n"
                                              "Using bundled fallback fonts instead.\n"
                                              "Text rendering may be inaccurate.",

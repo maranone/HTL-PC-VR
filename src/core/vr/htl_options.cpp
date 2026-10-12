@@ -204,7 +204,8 @@ private:
         }
     }
 
-    std::array<std::atomic_bool, Count> values{true, true};
+    // The comfort vignette is off unless chosen: it drew a dark wedge in the view (2026-10).
+    std::array<std::atomic_bool, Count> values{true, false};
     std::atomic_bool started{};
 
     std::unordered_map<VAddr, Kind> kinds;

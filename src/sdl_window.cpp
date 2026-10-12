@@ -29,8 +29,55 @@
 #include "input/input_handler.h"
 #include "input/input_mouse.h"
 #include "input/pad_source.h"
+#include "core/vr/htl_mouse_look.h"
 #include "core/vr/vr_runtime.h"
 #include "sdl_window.h"
+
+#include <numbers>
+
+namespace {
+// SHADPS4_FLAT=1: a headset title played on the monitor. The window goes fullscreen and the
+// mouse turns the head, as a headset would (relative mouse mode while the window has focus;
+// Escape lets the pointer go, a click takes it back). SHADPS4_FLAT_SENSITIVITY: degrees per
+// hundred mouse counts (default 8). SHADPS4_FLAT_FULLSCREEN=0 keeps a window.
+struct FlatLook {
+    bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_FLAT");
+        return value != nullptr && value[0] == '1';
+    }();
+    float degrees_per_count = [] {
+        const char* value = std::getenv("SHADPS4_FLAT_SENSITIVITY");
+        const float per_hundred = value != nullptr ? static_cast<float>(std::atof(value)) : 8.0f;
+        return std::clamp(per_hundred, 0.5f, 100.0f) / 100.0f;
+    }();
+    // With no headset at all (SHADPS4_VR=0) Here They Lie plays its own 2D mode: the mouse
+    // turns its camera directly (HtlMouseLook) instead of a head.
+    bool no_headset = [] {
+        const char* value = std::getenv("SHADPS4_VR");
+        return value != nullptr && value[0] == '0';
+    }();
+    float yaw{};
+    float pitch{};
+    bool captured{};
+
+    void Publish() const {
+        constexpr float radians = std::numbers::pi_v<float> / 180.0f;
+        Core::Vr::DeviceState head{};
+        head.pose.orientation = Core::Vr::FromYawPitchRoll(yaw * radians, pitch * radians, 0.0f);
+        head.tracked = true;
+        Core::Vr::Runtime::Instance().UpdateHead(head);
+    }
+    void Capture(SDL_Window* window, bool on) {
+        captured = on;
+        SDL_SetWindowRelativeMouseMode(window, on);
+    }
+};
+
+FlatLook& Flat() {
+    static FlatLook flat;
+    return flat;
+}
+} // namespace
 #include "video_core/renderdoc.h"
 
 #ifdef __APPLE__
@@ -164,6 +211,22 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, Input::GameControllers* controller
             window, EmulatorSettings.GetFullScreenMode() == "Fullscreen" ? displayMode : NULL);
     }
     SDL_SetWindowFullscreen(window, EmulatorSettings.IsFullScreen());
+    if (Flat().enabled) {
+        const char* fullscreen = std::getenv("SHADPS4_FLAT_FULLSCREEN");
+        if (fullscreen == nullptr || fullscreen[0] != '0') {
+            SDL_SetWindowFullscreen(window, true);
+        }
+        Flat().Capture(window, true);
+        Flat().Publish();
+        if (Flat().no_headset) {
+            LOG_INFO(Frontend, "Flat play without a headset: the mouse turns the camera "
+                               "({:.2f} degrees a count)",
+                     Flat().degrees_per_count);
+        } else {
+            LOG_INFO(Frontend, "Flat play: the mouse turns the head ({:.2f} degrees a count)",
+                     Flat().degrees_per_count);
+        }
+    }
     SDL_SyncWindow(window);
 
 #ifndef ENABLE_BACHATA_RUNTIME
@@ -372,6 +435,52 @@ void WindowSDL::WaitEvent() {
 
     if (!(lab.LabEnabled() ? SDL_WaitEventTimeout(&event, 20) : SDL_WaitEvent(&event))) {
         return;
+    }
+
+    if (auto& flat = Flat(); flat.enabled) {
+        switch (event.type) {
+        case SDL_EVENT_MOUSE_MOTION:
+            if (flat.captured && flat.no_headset) {
+                Core::HtlMouseLook::Add(event.motion.xrel * flat.degrees_per_count,
+                                        event.motion.yrel * flat.degrees_per_count);
+            } else if (flat.captured) {
+                flat.yaw = std::remainder(flat.yaw - event.motion.xrel * flat.degrees_per_count,
+                                          360.0f);
+                flat.pitch = std::clamp(flat.pitch - event.motion.yrel * flat.degrees_per_count,
+                                        -85.0f, 85.0f);
+                flat.Publish();
+            }
+            return;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            flat.Capture(window, false);
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if (!flat.captured) {
+                // This click only takes the pointer back.
+                flat.Capture(window, true);
+                return;
+            }
+            break;
+        case SDL_EVENT_KEY_DOWN:
+            if (event.key.key == SDLK_ESCAPE) {
+                flat.Capture(window, false);
+                return;
+            }
+            // Control held = crouch, in the game's own 2D mode.
+            if (flat.no_headset && !event.key.repeat &&
+                (event.key.key == SDLK_LCTRL || event.key.key == SDLK_RCTRL)) {
+                Core::HtlMouseLook::Crouch(true);
+            }
+            break;
+        case SDL_EVENT_KEY_UP:
+            if (flat.no_headset &&
+                (event.key.key == SDLK_LCTRL || event.key.key == SDLK_RCTRL)) {
+                Core::HtlMouseLook::Crouch(false);
+            }
+            break;
+        default:
+            break;
+        }
     }
 
     if (Libraries::Mouse::PushSDLEvent(event)) {
